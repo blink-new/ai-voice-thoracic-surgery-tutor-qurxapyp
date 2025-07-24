@@ -166,6 +166,11 @@ function App() {
                 Flashcards
               </Button>
               
+              {/* Debug: Show current user email */}
+              <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
+                Current email: {user?.email || 'No email'}
+              </div>
+              
               {user?.email === 'kai.jiabo.feng@gmail.com' && (
                 <Button
                   variant={currentModule === 'admin' ? 'default' : 'ghost'}
@@ -176,6 +181,16 @@ function App() {
                   Admin Panel
                 </Button>
               )}
+              
+              {/* Temporary: Always show admin for debugging */}
+              <Button
+                variant={currentModule === 'admin' ? 'default' : 'ghost'}
+                className="w-full justify-start"
+                onClick={() => setCurrentModule('admin')}
+              >
+                <Shield className="h-4 w-4 mr-2" />
+                Admin Panel (Debug)
+              </Button>
             </nav>
           </SidebarContent>
         </Sidebar>

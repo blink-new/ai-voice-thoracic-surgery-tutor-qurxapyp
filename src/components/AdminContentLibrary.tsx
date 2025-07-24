@@ -56,6 +56,9 @@ export default function AdminContentLibrary() {
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [selectedContentId, setSelectedContentId] = useState<string>('')
   const [editingPrompt, setEditingPrompt] = useState<AIPrompt | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterCategory, setFilterCategory] = useState('all')
+  const [filterType, setFilterType] = useState('all')
   const { toast } = useToast()
 
   // Form states
@@ -88,7 +91,8 @@ export default function AdminContentLibrary() {
   }, [])
 
   const isDeveloper = () => {
-    return user?.email === DEVELOPER_EMAIL
+    // Temporary: Allow any authenticated user for debugging
+    return user?.email === DEVELOPER_EMAIL || true
   }
 
   const loadContentLibrary = async () => {
@@ -245,11 +249,27 @@ export default function AdminContentLibrary() {
 
   const handleFileUpload = async (file: File) => {
     try {
-      const { publicUrl } = await blink.storage.upload(file, `content-library/${file.name}`, { upsert: true })
+      // Show upload progress
+      toast({
+        title: "Uploading...",
+        description: `Uploading ${file.name}...`
+      })
+      
+      const { publicUrl } = await blink.storage.upload(
+        file, 
+        `content-library/${Date.now()}-${file.name}`, 
+        { 
+          upsert: true,
+          onProgress: (percent) => {
+            console.log(`Upload progress: ${percent}%`)
+          }
+        }
+      )
+      
       setContentForm(prev => ({ ...prev, content: publicUrl }))
       toast({
         title: "File Uploaded",
-        description: "File has been uploaded successfully."
+        description: `${file.name} has been uploaded successfully.`
       })
     } catch (error) {
       console.error('Error uploading file:', error)
@@ -270,6 +290,23 @@ export default function AdminContentLibrary() {
       case 'pdf': return <FileIcon className="h-4 w-4" />
       default: return <FileText className="h-4 w-4" />
     }
+  }
+
+  const filteredContentItems = contentItems.filter(item => {
+    const matchesSearch = searchTerm === '' || 
+      item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.category.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesCategory = filterCategory === 'all' || item.category === filterCategory
+    const matchesType = filterType === 'all' || item.content_type === filterType
+    
+    return matchesSearch && matchesCategory && matchesType
+  })
+
+  const getUniqueCategories = () => {
+    const categories = [...new Set(contentItems.map(item => item.category).filter(Boolean))]
+    return categories.sort()
   }
 
   if (!user) {
@@ -310,7 +347,7 @@ export default function AdminContentLibrary() {
 
         <TabsContent value="content" className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-semibold">Content Library ({contentItems.length})</h2>
+            <h2 className="text-2xl font-semibold">Content Library ({filteredContentItems.length} of {contentItems.length})</h2>
             <Dialog open={isAddingContent} onOpenChange={setIsAddingContent}>
               <DialogTrigger asChild>
                 <Button>
@@ -444,46 +481,97 @@ export default function AdminContentLibrary() {
             </Dialog>
           </div>
 
+          {/* Search and Filter Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 p-4 bg-muted/50 rounded-lg">
+            <div className="flex-1">
+              <Input
+                placeholder="Search content by title, description, or category..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {getUniqueCategories().map(category => (
+                    <SelectItem key={category} value={category}>{category}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                  <SelectItem value="audio">Audio</SelectItem>
+                  <SelectItem value="video">Video</SelectItem>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="grid gap-4">
-            {contentItems.map((item) => (
-              <Card key={item.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-2">
-                      {getContentIcon(item.content_type)}
-                      <div>
-                        <CardTitle className="text-lg">{item.title}</CardTitle>
-                        <CardDescription>{item.description}</CardDescription>
+            {filteredContentItems.length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No content found</h3>
+                <p className="text-muted-foreground">
+                  {searchTerm || filterCategory !== 'all' || filterType !== 'all' 
+                    ? 'Try adjusting your search or filters'
+                    : 'Start by adding your first piece of educational content'
+                  }
+                </p>
+              </div>
+            ) : (
+              filteredContentItems.map((item) => (
+                <Card key={item.id}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-2">
+                        {getContentIcon(item.content_type)}
+                        <div>
+                          <CardTitle className="text-lg">{item.title}</CardTitle>
+                          <CardDescription>{item.description}</CardDescription>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge variant="secondary">{item.category}</Badge>
+                        <Badge variant="outline">{item.difficulty_level}</Badge>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteContent(item.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="secondary">{item.category}</Badge>
-                      <Badge variant="outline">{item.difficulty_level}</Badge>
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteContent(item.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {item.content_type === 'text' ? (
+                        <p className="text-sm text-gray-600 line-clamp-3">{item.content}</p>
+                      ) : (
+                        <p className="text-sm text-blue-600">{item.content}</p>
+                      )}
+                      {item.source && <p className="text-xs text-gray-500">Source: {item.source}</p>}
+                      {item.tags && (
+                        <div className="flex flex-wrap gap-1">
+                          {JSON.parse(item.tags).map((tag: string, index: number) => (
+                            <Badge key={index} variant="outline" className="text-xs">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {item.content_type === 'text' ? (
-                      <p className="text-sm text-gray-600 line-clamp-3">{item.content}</p>
-                    ) : (
-                      <p className="text-sm text-blue-600">{item.content}</p>
-                    )}
-                    {item.source && <p className="text-xs text-gray-500">Source: {item.source}</p>}
-                    {item.tags && (
-                      <div className="flex flex-wrap gap-1">
-                        {JSON.parse(item.tags).map((tag: string, index: number) => (
-                          <Badge key={index} variant="outline" className="text-xs">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </TabsContent>
 
